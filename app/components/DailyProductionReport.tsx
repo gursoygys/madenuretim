@@ -1,7 +1,7 @@
 import axios from "axios";
 import { useEffect, useRef, useState } from "react";
 
-const API_BASE = "http://10.50.26.20:5080/api/reports";
+const API_BASE = "https://api-uretim.gursoymaden.com.tr/api/reports";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
