@@ -1,7 +1,10 @@
 FROM node:20-slim AS development-dependencies-env
 COPY . /app
 WORKDIR /app
-RUN npm install
+# package-lock.json macOS'ta üretildiği için rolldown'un Linux native binding'leri
+# içinde yok. Lock dosyasını silip npm'in bu platform için sıfırdan çözüm yapmasını
+# sağlıyoruz (npm bug #4828).
+RUN rm -f package-lock.json && npm install
 
 FROM node:20-slim AS production-dependencies-env
 COPY ./package.json package-lock.json /app/
