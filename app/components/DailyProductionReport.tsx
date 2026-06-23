@@ -2,8 +2,32 @@ import axios from "axios";
 import { useEffect, useRef, useState } from "react";
 
 const API_BASE = "https://api-uretim.gursoymaden.com.tr/api/reports";
+const PLC_API_BASE = "https://api-uretim.gursoymaden.com.tr/api/plc";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface PlcDokum {
+  dokumNo: string;
+  value: number;
+  lastReadAtUtc: string;
+}
+
+interface PlcItem {
+  label: string;
+  key: string;
+  mapped: boolean;
+  unit: string | null;
+  total: number;
+  dokumCount: number;
+  dokumler: PlcDokum[];
+}
+
+interface PlcSummary {
+  date: string;
+  dokumCount: number;
+  dokumNolar: string[];
+  items: PlcItem[];
+}
 
 interface ReportItem {
   ad: string;
@@ -49,7 +73,10 @@ interface DateRange {
 }
 
 function isoDate(d: Date) {
-  return d.toISOString().split("T")[0];
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function getRange(key: FilterKey): DateRange {
@@ -101,12 +128,23 @@ function isSingleDay(range: DateRange) {
   return range.from === range.to;
 }
 
+function datesBetween(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const cur = new Date(from + "T00:00:00");
+  const end = new Date(to + "T00:00:00");
+  while (cur <= end) {
+    dates.push(isoDate(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "bugun", label: "Bugün" },
   { key: "dun", label: "Dün" },
-  { key: "bu-hafta", label: "Bu Hafta" },
-  { key: "bu-ay", label: "Bu Ay" },
+  { key: "bu-hafta", label: "Hafta" },
   { key: "gecen-hafta", label: "Geçen Hafta" },
+  { key: "bu-ay", label: "Bu Ay" },
   { key: "gecen-ay", label: "Geçen Ay" },
   { key: "bu-yil", label: "Bu Yıl" },
 ];
@@ -205,6 +243,51 @@ function ReportCard({ report }: { report: Report }) {
   );
 }
 
+function PlcReportCard({ summary }: { summary: PlcSummary }) {
+  const mapped = summary.items.filter((i) => i.mapped && i.total > 0);
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-blue-950 px-5 py-4 flex items-end justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-slate-400">Döküm Sayısı: {summary.dokumCount}</span>
+          <span className="text-xs text-slate-400">
+            {summary.dokumNolar.join(", ")}
+          </span>
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-white font-medium text-sm">{formatDisplayDate(summary.date)}</p>
+          <span className="text-xs text-blue-400 font-semibold uppercase tracking-widest">PLC Verisi</span>
+        </div>
+      </div>
+      <div className="bg-slate-500 px-4 py-2">
+        <span className="text-white text-xs font-bold uppercase tracking-widest">HAMMADDE / ENERJİ</span>
+      </div>
+      <table className="w-full border-collapse">
+        <tbody>
+          {mapped.map((item, i) => (
+            <tr key={item.key} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+              <td className="py-2.5 px-4 text-xs text-slate-700 leading-snug">{item.label}</td>
+              <td className="py-2.5 px-4 pr-0 text-xs text-right font-semibold text-slate-900">
+                {fmt(item.total)}
+              </td>
+              <td className="py-2.5 px-4 text-xs text-slate-400 text-right w-16 whitespace-nowrap">
+                {item.unit ?? "—"}
+              </td>
+            </tr>
+          ))}
+          {mapped.length === 0 && (
+            <tr>
+              <td colSpan={3} className="py-6 text-center text-xs text-slate-400">
+                Veri bulunamadı.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function DailyProductionReport() {
@@ -235,34 +318,62 @@ export default function DailyProductionReport() {
   const [customTo, setCustomTo] = useState("");
   const [appliedRange, setAppliedRange] = useState<DateRange>(getRange("bugun"));
   const [reports, setReports] = useState<Report[]>([]);
+  const [plcReports, setPlcReports] = useState<PlcSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function fetchRange(range: DateRange) {
+  function fetchRange(range: DateRange, filterKey: FilterKey | "ozel") {
     setLoading(true);
     setError(null);
     setReports([]);
+    setPlcReports([]);
 
-    const req = isSingleDay(range)
-      ? axios.get<Report>(`${API_BASE}/${range.from}`).then((r) => [r.data])
-      : axios
-          .get<Report[]>(`${API_BASE}`, { params: { from: range.from, to: range.to } })
-          .then((r) => r.data);
-
-    req
-      .then(setReports)
-      .catch((err) => {
-        if (axios.isAxiosError(err) && err.response?.status === 404) {
-          setError("Bu dönemde rapor bulunamadı.");
-        } else {
+    if (isSingleDay(range)) {
+      axios
+        .get<Report>(`${API_BASE}/${range.from}`)
+        .then((r) => setReports([r.data]))
+        .catch((err) => {
+          if (axios.isAxiosError(err) && err.response?.status === 404) {
+            return axios
+              .get<PlcSummary>(`${PLC_API_BASE}/daily-summary/${range.from}`)
+              .then((r) => setPlcReports([r.data]))
+              .catch(() => setError("Bu dönemde rapor bulunamadı."));
+          }
           setError("Rapor yüklenirken bir hata oluştu.");
-        }
-      })
-      .finally(() => setLoading(false));
+        })
+        .finally(() => setLoading(false));
+    } else {
+      axios
+        .get<Report[]>(`${API_BASE}`, { params: { from: range.from, to: range.to } })
+        .then((r) => {
+          if (r.data.length === 0 && filterKey === "bu-hafta") {
+            const dates = datesBetween(range.from, range.to);
+            return Promise.all(
+              dates.map((date) =>
+                axios
+                  .get<PlcSummary>(`${PLC_API_BASE}/daily-summary/${date}`)
+                  .then((r) => r.data)
+                  .catch(() => null)
+              )
+            ).then((results) => {
+              setPlcReports(results.filter(Boolean) as PlcSummary[]);
+            });
+          }
+          setReports(r.data);
+        })
+        .catch((err) => {
+          if (axios.isAxiosError(err) && err.response?.status === 404) {
+            setError("Bu dönemde rapor bulunamadı.");
+          } else {
+            setError("Rapor yüklenirken bir hata oluştu.");
+          }
+        })
+        .finally(() => setLoading(false));
+    }
   }
 
   useEffect(() => {
-    fetchRange(appliedRange);
+    fetchRange(appliedRange, activeFilter);
   }, [appliedRange]);
 
   function handleFilterClick(key: FilterKey) {
@@ -403,6 +514,7 @@ export default function DailyProductionReport() {
         )}
 
         {!loading && reports.map((r) => <ReportCard key={r.id} report={r} />)}
+        {!loading && plcReports.map((s) => <PlcReportCard key={s.date} summary={s} />)}
       </main>
 
       {showScrollTop && (
