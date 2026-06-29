@@ -1,8 +1,8 @@
 import axios from "axios";
+import { Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-
-const API_BASE = "https://api-uretim.gursoymaden.com.tr/api/reports";
-const PLC_API_BASE = "https://api-uretim.gursoymaden.com.tr/api/plc";
+import { useNavigate } from "react-router";
+import { API_BASE, PLC_API_BASE } from "~/env";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -290,7 +290,8 @@ function PlcReportCard({ summary }: { summary: PlcSummary }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-export default function DailyProductionReport() {
+export default function ProductionReport() {
+  const navigate = useNavigate();
   const lastScrollY = useRef(0);
   const [headerVisible, setHeaderVisible] = useState(true);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -330,12 +331,12 @@ export default function DailyProductionReport() {
 
     if (isSingleDay(range)) {
       axios
-        .get<Report>(`${API_BASE}/${range.from}`)
+        .get<Report>(`${API_BASE}/api/reports/${range.from}`)
         .then((r) => setReports([r.data]))
         .catch((err) => {
           if (axios.isAxiosError(err) && err.response?.status === 404) {
             return axios
-              .get<PlcSummary>(`${PLC_API_BASE}/daily-summary/${range.from}`)
+              .get<PlcSummary>(`${PLC_API_BASE}/api/plc/daily-summary/${range.from}`)
               .then((r) => setPlcReports([r.data]))
               .catch(() => setError("Bu dönemde rapor bulunamadı."));
           }
@@ -344,14 +345,14 @@ export default function DailyProductionReport() {
         .finally(() => setLoading(false));
     } else {
       axios
-        .get<Report[]>(`${API_BASE}`, { params: { from: range.from, to: range.to } })
+        .get<Report[]>(`${API_BASE}/api/reports`, { params: { from: range.from, to: range.to } })
         .then((r) => {
           if (r.data.length === 0 && filterKey === "bu-hafta") {
             const dates = datesBetween(range.from, range.to);
             return Promise.all(
               dates.map((date) =>
                 axios
-                  .get<PlcSummary>(`${PLC_API_BASE}/daily-summary/${date}`)
+                  .get<PlcSummary>(`${PLC_API_BASE}/api/plc/daily-summary/${date}`)
                   .then((r) => r.data)
                   .catch(() => null)
               )
@@ -412,10 +413,19 @@ export default function DailyProductionReport() {
           "transition-transform duration-300 sm:translate-y-0",
           headerVisible ? "translate-y-0" : "-translate-y-full",
         ].join(" ")}>
-        <p className="text-blue-300 text-xs font-semibold uppercase tracking-widest mb-1">
-          BG Ferrokrom
-        </p>
-        <h1 className="text-white text-xl font-bold mb-4">Günlük Üretim Raporları</h1>
+          <div className="flex justify-between">
+            <div>
+              <p className="text-blue-300 text-xs font-semibold uppercase tracking-widest mb-1">
+                BG Ferrokrom
+              </p>
+              <h1 className="text-white text-xl font-bold mb-4">Günlük Üretim Raporları</h1>
+            </div>
+            <div className="mt-2">
+              <button onClick={() => navigate("/entry")} className="bg-blue-900 text-white text-sm py-2 px-3 w-full rounded-md">
+                <Plus/>
+              </button>
+            </div>
+          </div>
 
         {/* Filter pills — horizontally scrollable on mobile */}
         <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
@@ -489,8 +499,7 @@ export default function DailyProductionReport() {
           </div>
         )}
       </header>
-
-      {/* Content */}
+      
       <main className="max-w-2xl mx-auto px-4 py-5 flex flex-col gap-4">
         {loading && (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
