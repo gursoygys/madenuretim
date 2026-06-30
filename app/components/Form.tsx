@@ -4,18 +4,20 @@ import { API_BASE, PLC_API_BASE } from "~/env";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface PlcItem {
-  label: string;
-  key: string;
-  mapped: boolean;
-  unit: string | null;
+interface PlcMaterial {
+  tagKey: string;
+  materialName: string;
   total: number;
+  dokumCount: number;
 }
 
 interface PlcSummary {
-  date: string;
+  day: string;
   dokumCount: number;
-  items: PlcItem[];
+  materials: PlcMaterial[];
+  arkOcagiEnerjiMwhTotal: number;
+  scadaUretimMiktariTotal: number;
+  anlikGucAvg: number;
 }
 
 interface ExtraRow {
@@ -51,20 +53,25 @@ const FIELDS: FieldDef[] = [
   { id: "ticariAylik_tonAy",    label: "Ticari Ürün Aylık",  unit: "TonAy",   section: "uretim", manual: true },
   { id: "ticariAylik_tonGun",   label: "Ticari Ürün Aylık",  unit: "TonGün",  section: "uretim", readOnly: true },
 
-  // TÜKETİM — PLC sourced (kg → ton ÷1000), except elektrik
-  { id: "cromErkay",       label: "Krom Cevheri (Erkay Maden)",    unit: "Ton", section: "tuketim", plcKey: "Krom Cevheri (Erkay Maden)",    plcDivide: 1000 },
-  { id: "cromBG",          label: "Krom Cevheri (BG Maden)",       unit: "Ton", section: "tuketim", plcKey: "Krom Cevheri (BG Maden)",       plcDivide: 1000 },
-  { id: "cromOrhun",       label: "Krom Cevheri (Orhun Maden)",    unit: "Ton", section: "tuketim", plcKey: "Krom Cevheri (Orhun Maden)",    plcDivide: 1000 },
-  { id: "cromTurkMaadin",  label: "Krom Cevheri (Türk Maadin)",    unit: "Ton", section: "tuketim", plcKey: "Krom Cevheri (Türk Maadin)",    plcDivide: 1000 },
-  { id: "cromDBH",         label: "Krom Cevheri (DBH Maden)",      unit: "Ton", section: "tuketim", plcKey: "Krom Cevheri (DBH Maden)",      plcDivide: 1000 },
-  { id: "cromCVK",         label: "Krom Cevheri (CVK Maden)",      unit: "Ton", section: "tuketim", plcKey: "Krom Cevheri (CVK Maden)",      plcDivide: 1000 },
-  { id: "tozFerrokrom",    label: "Toz Ferrokrom",                  unit: "Ton", section: "tuketim", plcKey: "Toz Ferrokrom",                  plcDivide: 1000 },
-  { id: "ferrokrom0310",   label: "03-10 Ferrokrom",                unit: "Ton", section: "tuketim", plcKey: "03-10 Ferrokrom",                plcDivide: 1000 },
-  { id: "uretimAtik",      label: "Üretim Atıkları / Pelet",       unit: "Ton", section: "tuketim", plcKey: "Üretim Atıkları / Pelet",       plcDivide: 1000 },
-  { id: "jigMetal",        label: "Jig Metal",                      unit: "Ton", section: "tuketim", plcKey: "Jig Metal",                      plcDivide: 1000 },
-  { id: "kokKomuru",       label: "Kok Kömürü",                     unit: "Ton", section: "tuketim", plcKey: "Kok Kömürü",                     plcDivide: 1000 },
-  { id: "antrasit",        label: "Antrasit",                       unit: "Ton", section: "tuketim", plcKey: "Antrasit",                       plcDivide: 1000 },
-  { id: "elektrik",        label: "Elektrik",                       unit: "Mwh", section: "tuketim", plcKey: "Elektrik" },
+  // TÜKETİM — PLC sourced (kg → ton ÷1000); plcKey = yeni response tagKey'i.
+  // tagKey eşleşmesi olmayan alanlar (BG/Orhun/Türk Maadin/DBH, 03-10 Ferrokrom, Jig Metal)
+  // PLC'den doldurulmaz; tagKey'leri öğrenildiğinde eklenebilir.
+  { id: "cromErkay",       label: "Krom Cevheri (Erkay Maden)",    unit: "Ton", section: "tuketim", plcKey: "ERKAY",            plcDivide: 1000 },
+  { id: "cromBG",          label: "Krom Cevheri (BG Maden)",       unit: "Ton", section: "tuketim" },
+  { id: "cromOrhun",       label: "Krom Cevheri (Orhun Maden)",    unit: "Ton", section: "tuketim" },
+  { id: "cromTurkMaadin",  label: "Krom Cevheri (Türk Maadin)",    unit: "Ton", section: "tuketim" },
+  { id: "cromDBH",         label: "Krom Cevheri (DBH Maden)",      unit: "Ton", section: "tuketim" },
+  { id: "cromCVK",         label: "Krom Cevheri (CVK Maden)",      unit: "Ton", section: "tuketim", plcKey: "CVK MADEN",        plcDivide: 1000 },
+  { id: "tozFerrokrom",    label: "Toz Ferrokrom",                  unit: "Ton", section: "tuketim", plcKey: "TOZ METAL",        plcDivide: 1000 },
+  { id: "ferrokrom0310",   label: "03-10 Ferrokrom",                unit: "Ton", section: "tuketim" },
+  { id: "uretimAtik",      label: "Üretim Atıkları / Pelet",       unit: "Ton", section: "tuketim", plcKey: "PELET",            plcDivide: 1000 },
+  { id: "jigMetal",        label: "Jig Metal",                      unit: "Ton", section: "tuketim" },
+  { id: "kokKomuru",       label: "Kok Kömürü",                     unit: "Ton", section: "tuketim", plcKey: "KOK",              plcDivide: 1000 },
+  { id: "antrasit",        label: "Antrasit",                       unit: "Ton", section: "tuketim", plcKey: "ZAVIYE ANTRASIT",  plcDivide: 1000 },
+  { id: "kirec",           label: "Kireç",                          unit: "Ton", section: "tuketim", plcKey: "KIREC",            plcDivide: 1000 },
+  { id: "silisKumu",       label: "Silis Kumu",                     unit: "Ton", section: "tuketim", plcKey: "SILIS KUMU",       plcDivide: 1000 },
+  // Elektrik: arkOcagiEnerjiMwhTotal'dan applyPlc içinde özel olarak doldurulur.
+  { id: "elektrik",        label: "Elektrik",                       unit: "Mwh", section: "tuketim" },
 
   // VERİMLİLİK — all calculated
   { id: "cevherVerim",   label: "Ton başına cevher tüketimi",         unit: "Ton", section: "ticariUrunVerimlilik", readOnly: true },
@@ -112,6 +119,10 @@ function isoToday() {
 
 function n(v: string): number {
   return parseFloat(String(v).replace(",", ".")) || 0;
+}
+
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
 }
 
 function fmt2(v: string | number): string {
@@ -165,15 +176,18 @@ function calcDerived(vals: Record<string, string>, dateStr: string): Record<stri
     return v === null ? "0" : String(v);
   }
 
+  // Sıvı ürün girilmemiş veya 0 ise, sıvı ürüne bağlı hesaplamalar yapılmaz.
+  const hasSivi = siviGun > 0;
+
   return {
-    siviUrun_tonSaat:     String(siviSaat),
-    ticariUrun_tonGun:    String(ticariGun),
-    ticariUrun_tonSaat:   String(ticariSaat),
+    siviUrun_tonSaat:     hasSivi ? String(siviSaat) : "",
+    ticariUrun_tonGun:    hasSivi ? String(ticariGun) : "",
+    ticariUrun_tonSaat:   hasSivi ? String(ticariSaat) : "",
     siviUrunAylik_tonGun: String(siviAylikGun),
     ticariAylik_tonGun:   String(ticariAylikGun),
-    cevherVerim:          calc(cevherVerim),
-    kokVerim:             calc(kokVerim),
-    elektrikVerim:        calc(elektrikVerim),
+    cevherVerim:          hasSivi ? calc(cevherVerim) : "",
+    kokVerim:             hasSivi ? calc(kokVerim) : "",
+    elektrikVerim:        hasSivi ? calc(elektrikVerim) : "",
     stok_toplamFerrokrom:    String(toplamFerrokrom),
     stok_toplamKromCevheri:  String(toplamKromCevheri),
   };
@@ -270,19 +284,25 @@ export default function Form({ onSuccess }: { onSuccess?: () => void }) {
   const [submitOk, setSubmitOk] = useState(false);
 
   function applyPlc(summary: PlcSummary) {
-    const byLabel: Record<string, number> = {};
-    summary.items.forEach((item) => { byLabel[item.label] = item.total; });
+    const byTag: Record<string, number> = {};
+    summary.materials.forEach((m) => { byTag[m.tagKey] = m.total; });
 
     const newVals: Record<string, string> = {};
     const newSource: Record<string, boolean> = {};
 
     FIELDS.forEach((f) => {
-      if (f.plcKey && byLabel[f.plcKey] != null) {
-        const raw = byLabel[f.plcKey];
-        newVals[f.id] = String(f.plcDivide ? raw / f.plcDivide : raw);
+      if (f.plcKey && byTag[f.plcKey] != null) {
+        const raw = byTag[f.plcKey];
+        newVals[f.id] = String(round2(f.plcDivide ? raw / f.plcDivide : raw));
         newSource[f.id] = true;
       }
     });
+
+    // Elektrik tüketimi: ark ocağı enerjisi (MWh), bölme yok.
+    if (summary.arkOcagiEnerjiMwhTotal != null) {
+      newVals["elektrik"] = String(round2(summary.arkOcagiEnerjiMwhTotal));
+      newSource["elektrik"] = true;
+    }
 
     setValues((prev) => {
       const merged = { ...prev, ...newVals };
@@ -296,7 +316,7 @@ export default function Form({ onSuccess }: { onSuccess?: () => void }) {
     setPlcLoading(true);
     setPlcSource({});
     axios
-      .get<PlcSummary>(`${PLC_API_BASE}/api/plc/daily-summary/${date}`)
+      .get<PlcSummary>(`${PLC_API_BASE}/api/reports/daily-consumption?date=${date}`)
       .then((r) => applyPlc(r.data))
       .catch(() => {})
       .finally(() => setPlcLoading(false));
@@ -329,9 +349,10 @@ export default function Form({ onSuccess }: { onSuccess?: () => void }) {
     if (f.readOnly) {
       return fmt2(raw);
     }
-    const fromPlc = plcSource[f.id];
-    if (fromPlc && !editing.has(f.id)) return fmt2(raw);
-    return raw;
+    // Düzenlenmeyen (odakta olmayan) tüm alanlar 2 ondalıkla gösterilir;
+    // odaktayken ham değer gösterilir ki rahat yazılabilsin.
+    if (editing.has(f.id)) return raw;
+    return fmt2(raw);
   }
 
   function buildBody() {
@@ -425,7 +446,7 @@ export default function Form({ onSuccess }: { onSuccess?: () => void }) {
                           value={display}
                           readOnly={isCalc}
                           onFocus={() => {
-                            if (!isCalc && fromPlc)
+                            if (!isCalc)
                               setEditing((p) => new Set(p).add(f.id));
                           }}
                           onBlur={() =>

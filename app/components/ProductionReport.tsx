@@ -6,27 +6,49 @@ import { API_BASE, PLC_API_BASE } from "~/env";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface PlcDokum {
-  dokumNo: string;
-  value: number;
-  lastReadAtUtc: string;
-}
-
-interface PlcItem {
-  label: string;
-  key: string;
-  mapped: boolean;
-  unit: string | null;
+interface PlcMaterial {
+  tagKey: string;
+  materialName: string;
   total: number;
   dokumCount: number;
-  dokumler: PlcDokum[];
+}
+
+interface PlcDokumMaterial {
+  tagKey: string;
+  materialName: string;
+  value: number;
+}
+
+interface PlcDokum {
+  dokumNo: string;
+  firstSeen: string;
+  lastSeen: string;
+  readingCount: number;
+  materials: PlcDokumMaterial[];
+  arkOcagiEnerjiMwh: number;
+  scadaUretimMiktari: number;
+  anlikGucMax: number;
+  periyotBaslangic: string;
+}
+
+interface PlcSilo {
+  dtbIndex: number;
+  materialName: string;
+  samples: number;
+  dozajAmount: number | null;
 }
 
 interface PlcSummary {
-  date: string;
+  day: string;
   dokumCount: number;
-  dokumNolar: string[];
-  items: PlcItem[];
+  readingCount: number;
+  readingsWithoutDokum: number;
+  materials: PlcMaterial[];
+  arkOcagiEnerjiMwhTotal: number;
+  scadaUretimMiktariTotal: number;
+  anlikGucAvg: number;
+  silos: PlcSilo[];
+  dokumler: PlcDokum[];
 }
 
 interface ReportItem {
@@ -152,7 +174,7 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
-  return n.toLocaleString("tr-TR", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  return n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatDisplayDate(isoStr: string) {
@@ -244,44 +266,66 @@ function ReportCard({ report }: { report: Report }) {
 }
 
 function PlcReportCard({ summary }: { summary: PlcSummary }) {
-  const mapped = summary.items.filter((i) => i.mapped && i.total > 0);
+  const materials = summary.materials.filter((m) => m.total > 0);
+  const dokumNolar = summary.dokumler.map((d) => d.dokumNo);
+  const enerji: { ad: string; deger: number; birim: string }[] = [
+    { ad: "Ark Ocağı Enerji", deger: summary.arkOcagiEnerjiMwhTotal, birim: "MWh" },
+    { ad: "SCADA Üretim Miktarı", deger: summary.scadaUretimMiktariTotal, birim: "—" },
+    { ad: "Ortalama Anlık Güç", deger: summary.anlikGucAvg, birim: "MW" },
+  ];
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
       <div className="bg-blue-950 px-5 py-4 flex items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
           <span className="text-xs text-slate-400">Döküm Sayısı: {summary.dokumCount}</span>
-          <span className="text-xs text-slate-400">
-            {summary.dokumNolar.join(", ")}
-          </span>
+          <span className="text-xs text-slate-400">{dokumNolar.join(", ")}</span>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-white font-medium text-sm">{formatDisplayDate(summary.date)}</p>
+          <p className="text-white font-medium text-sm">{formatDisplayDate(summary.day)}</p>
           <span className="text-xs text-blue-400 font-semibold uppercase tracking-widest">PLC Verisi</span>
         </div>
       </div>
       <div className="bg-slate-500 px-4 py-2">
-        <span className="text-white text-xs font-bold uppercase tracking-widest">HAMMADDE / ENERJİ</span>
+        <span className="text-white text-xs font-bold uppercase tracking-widest">HAMMADDE</span>
       </div>
       <table className="w-full border-collapse">
         <tbody>
-          {mapped.map((item, i) => (
-            <tr key={item.key} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
-              <td className="py-2.5 px-4 text-xs text-slate-700 leading-snug">{item.label}</td>
+          {materials.map((m, i) => (
+            <tr key={m.tagKey} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+              <td className="py-2.5 px-4 text-xs text-slate-700 leading-snug">{m.materialName}</td>
               <td className="py-2.5 px-4 pr-0 text-xs text-right font-semibold text-slate-900">
-                {fmt(item.total)}
+                {fmt(m.total)}
               </td>
               <td className="py-2.5 px-4 text-xs text-slate-400 text-right w-16 whitespace-nowrap">
-                {item.unit ?? "—"}
+                kg
               </td>
             </tr>
           ))}
-          {mapped.length === 0 && (
+          {materials.length === 0 && (
             <tr>
               <td colSpan={3} className="py-6 text-center text-xs text-slate-400">
                 Veri bulunamadı.
               </td>
             </tr>
           )}
+        </tbody>
+      </table>
+      <div className="bg-slate-500 px-4 py-2">
+        <span className="text-white text-xs font-bold uppercase tracking-widest">ENERJİ / ÜRETİM</span>
+      </div>
+      <table className="w-full border-collapse">
+        <tbody>
+          {enerji.map((e, i) => (
+            <tr key={e.ad} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+              <td className="py-2.5 px-4 text-xs text-slate-700 leading-snug">{e.ad}</td>
+              <td className="py-2.5 px-4 pr-0 text-xs text-right font-semibold text-slate-900">
+                {fmt(e.deger)}
+              </td>
+              <td className="py-2.5 px-4 text-xs text-slate-400 text-right w-16 whitespace-nowrap">
+                {e.birim}
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -336,7 +380,7 @@ export default function ProductionReport() {
         .catch((err) => {
           if (axios.isAxiosError(err) && err.response?.status === 404) {
             return axios
-              .get<PlcSummary>(`${PLC_API_BASE}/api/plc/daily-summary/${range.from}`)
+              .get<PlcSummary>(`${PLC_API_BASE}/api/reports/daily-consumption?date=${range.from}`)
               .then((r) => setPlcReports([r.data]))
               .catch(() => setError("Bu dönemde rapor bulunamadı."));
           }
@@ -352,7 +396,7 @@ export default function ProductionReport() {
             return Promise.all(
               dates.map((date) =>
                 axios
-                  .get<PlcSummary>(`${PLC_API_BASE}/api/plc/daily-summary/${date}`)
+                  .get<PlcSummary>(`${PLC_API_BASE}/api/reports/daily-consumption?date=${date}`)
                   .then((r) => r.data)
                   .catch(() => null)
               )
@@ -523,7 +567,7 @@ export default function ProductionReport() {
         )}
 
         {!loading && reports.map((r) => <ReportCard key={r.id} report={r} />)}
-        {!loading && plcReports.map((s) => <PlcReportCard key={s.date} summary={s} />)}
+        {!loading && plcReports.map((s) => <PlcReportCard key={s.day} summary={s} />)}
       </main>
 
       {showScrollTop && (
