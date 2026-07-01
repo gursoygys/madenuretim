@@ -559,12 +559,12 @@ export default function ProductionReport() {
           </div>
         )}
 
-        {!loading && !error && reports.length === 0 && (
+        {/* {!loading && !error && reports.length === 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 px-5 py-10 text-center">
             <p className="text-2xl mb-2">📋</p>
             <p className="text-sm font-medium text-slate-500">Bu dönemde rapor bulunamadı.</p>
           </div>
-        )}
+        )} */}
 
         {!loading && reports.map((r) => <ReportCard key={r.id} report={r} />)}
         {!loading && plcReports.map((s) => <PlcReportCard key={s.day} summary={s} />)}
